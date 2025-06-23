@@ -1,0 +1,26 @@
+import subprocess
+from PIL import Image
+from io import BytesIO
+import pytesseract
+import pyperclip
+
+# Step 1: Select region using slurp
+try:
+    region = subprocess.check_output(["slurp"]).decode().strip()
+except subprocess.CalledProcessError:
+    print("❌ Region selection cancelled.")
+    exit()
+
+# Step 2: Take screenshot using grim (output to stdout)
+try:
+    screenshot = subprocess.check_output(["grim", "-g", region, "-"])
+except subprocess.CalledProcessError:
+    print("❌ Screenshot failed.")
+    exit()
+
+# Step 3: Load image from memory
+image = Image.open(BytesIO(screenshot))
+
+# Step 4: OCR with Tesseract
+text = pytesseract.image_to_string(image).strip()
+print("✅ OCR Result:\n", text)
