@@ -1,0 +1,78 @@
+#include <iostream>
+#include <cstdlib>
+#include <cstdio>
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <algorithm>   // for std::remove
+#include <array>       // for std::array
+
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer{};
+    std::string result;
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) {
+        std::cerr << "Failed to run command: " << cmd << std::endl;
+        return "";
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        result += buffer.data();
+    }
+    pclose(pipe);
+    return result;
+}
+
+int main() {
+    // Step 1: Select region with slurp
+    std::string region = exec("slurp");
+    if (region.empty()) {
+        std::cerr << "❌ Region selection cancelled or failed." << std::endl;
+        return 1;
+    }
+    region.erase(std::remove(region.begin(), region.end(), '\n'), region.end());
+
+    // Step 2: Take screenshot using grim
+    const std::string tempImage = "/tmp/capture.png";
+    std::string grimCmd = "grim -g \"" + region + "\" " + tempImage;
+    int grimStatus = system(grimCmd.c_str());
+    if (grimStatus != 0) {
+        std::cerr << "❌ Screenshot failed." << std::endl;
+        return 1;
+    }
+
+    // Step 3: Run tesseract OCR
+    const std::string tempTxt = "/tmp/output";
+    std::string tesseractCmd = "tesseract " + tempImage + " " + tempTxt + " > /dev/null 2>&1";
+    int tessStatus = system(tesseractCmd.c_str());
+    if (tessStatus != 0) {
+        std::cerr << "❌ OCR failed." << std::endl;
+        return 1;
+    }
+
+    // Step 4: Read OCR output
+    std::ifstream inFile(tempTxt + ".txt");
+    if (!inFile) {
+        std::cerr << "❌ Could not open OCR output file." << std::endl;
+        return 1;
+    }
+    std::stringstream buffer;
+    buffer << inFile.rdbuf();
+    std::string text = buffer.str();
+    inFile.close();
+
+    std::cout << "✅ OCR Result:\n" << text << std::endl;
+
+    // Step 5: Copy OCR text to clipboard using wl-copy
+    // We open a pipe to 'wl-copy' and write the OCR text to its stdin
+    FILE* clipPipe = popen("wl-copy", "w");
+    if (!clipPipe) {
+        std::cerr << "❌ Failed to open wl-copy pipe." << std::endl;
+        return 1;
+    }
+    fwrite(text.c_str(), sizeof(char), text.size(), clipPipe);
+    pclose(clipPipe);
+
+    std::cout << "✅ OCR text copied to clipboard." << std::endl;
+
+    return 0;
+}
